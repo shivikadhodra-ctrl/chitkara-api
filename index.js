@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 require("dotenv").config();
 
 const app = express();
@@ -56,7 +57,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ------------------ GET /bfhl (optional but common requirement) ------------------
+// ------------------ GET /bfhl ------------------
 
 app.get("/bfhl", (req, res) => {
   res.status(200).json({
@@ -71,7 +72,6 @@ app.post("/bfhl", async (req, res) => {
   try {
     const body = req.body;
 
-    // Validation - must have exactly one key
     if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
       return res.status(400).json({
         is_success: false,
@@ -114,48 +114,28 @@ app.post("/bfhl", async (req, res) => {
         output = findHCF(value);
         break;
 
-case "AI":
-case "ai":
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error("Invalid AI Input: must be a non-empty string");
-  }
+      case "AI":
+      case "ai":
+        if (typeof value !== "string" || value.trim() === "") {
+          throw new Error("Invalid AI Input: must be a non-empty string");
+        }
 
-  if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not set in environment variables");
-  }
+        if (!GEMINI_API_KEY) {
+          throw new Error("GEMINI_API_KEY is not set in environment variables");
+        }
 
-  try {
-    const aiResponse = await axios.post(
-      
-`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        contents: [
-          {
-            parts: [{ text: value }],
-          },
-        ],
-      },
-      {
-        headers: { "Content-Type": "application/json" },
-        timeout: 15000,
-      }
-    );
+        try {
+          // ✅ Using @google/generative-ai SDK with gemini-3-flash-preview
+          const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+          const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+          const result = await model.generateContent(value);
+          output = result.response.text() || "No response from AI";
 
-    output =
-      aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "No response from AI";
-
-  } catch (aiError) {
-    const geminiMsg =
-      aiError.response?.data?.error?.message ||
-      aiError.response?.status ||
-      aiError.message ||
-      "Unknown Gemini API error";
-
-    console.error("Gemini API Error:", geminiMsg);
-    throw new Error(`Gemini API failed: ${geminiMsg}`);
-  }
-  break;
+        } catch (aiError) {
+          console.error("Gemini AI Error:", aiError.message);
+          throw new Error(`Gemini API failed: ${aiError.message}`);
+        }
+        break;
 
       default:
         throw new Error(
@@ -163,7 +143,6 @@ case "ai":
         );
     }
 
-    // ✅ Success Response
     res.status(200).json({
       is_success: true,
       official_email: EMAIL,
@@ -172,8 +151,6 @@ case "ai":
 
   } catch (err) {
     console.error("Request Error:", err.message);
-
-    // ✅ Always return meaningful error message
     res.status(400).json({
       is_success: false,
       error: err.message || err.toString(),
@@ -188,5 +165,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server Running on Port ${PORT}`);
   console.log(`EMAIL: ${EMAIL}`);
-  console.log(`GEMINI_API_KEY set: ${!!GEMINI_API_KEY}`); // ✅ logs true/false on startup
+  console.log(`GEMINI_API_KEY set: ${!!GEMINI_API_KEY}`);
 });
